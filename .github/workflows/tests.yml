@@ -1,0 +1,56 @@
+name: Full Test Suite
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to test
+        type: string
+        default: ""
+      runner:
+        description: Runner type
+        type: choice
+        options:
+          - github-hosted
+          - self-hosted
+        default: github-hosted
+
+jobs:
+  test:
+    name: full test suite (Linux)
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted", "Linux"]') || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Install lld and ALSA/GUI dependencies
+        if: inputs.runner != 'self-hosted'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            lld \
+            libasound2-dev \
+            pkg-config \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libgl1-mesa-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Run full test suite
+        run: cargo nextest run --profile ci --workspace

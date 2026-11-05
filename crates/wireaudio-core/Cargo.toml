@@ -1,10 +1,10 @@
 [package]
-name = "awc-core"
+name = "wireaudio-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Core types, lock-free shared-memory multi-client audio bus, and DSP primitives for AudioWireCraft"
+description = "Core types, lock-free shared-memory multi-client audio bus, and DSP primitives for WireAudio"
 
 [dependencies]
 libc.workspace = true

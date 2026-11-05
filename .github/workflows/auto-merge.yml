@@ -1,0 +1,52 @@
+name: Auto-merge
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, ready_for_review, labeled]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  enable-auto-merge:
+    if: |
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'labeled' || github.event.label.name == 'auto-merge') &&
+      contains(github.event.pull_request.labels.*.name, 'auto-merge')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for review to land
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          for _ in $(seq 1 30); do
+            count=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+              --jq 'map(select(.user.login == "copilot-pull-request-reviewer[bot]")) | length')
+            if [ "$count" -gt 0 ]; then
+              echo "landed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "landed=false" >> "$GITHUB_OUTPUT"
+      - name: Enable auto-merge (squash)
+        if: steps.wait.outputs.landed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          state=$(gh pr view "$PR_URL" --json state,isDraft -q '.state + " " + (.isDraft | tostring)')
+          if [ "$state" != "OPEN false" ]; then
+            echo "PR no longer open and ready ($state) after the wait; skipping."
+            exit 0
+          fi
+          gh pr merge --auto --squash "$PR_URL"
+      - name: Report skipped auto-merge
+        if: steps.wait.outputs.landed == 'false'
+        run: echo "No Copilot review landed within the wait window; leaving auto-merge disabled — enable it manually once reviewed."
