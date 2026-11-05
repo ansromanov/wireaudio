@@ -63,6 +63,6 @@ systemctl --user enable --now wireaudio.service
 echo ""
 echo "=== WireAudio Installed Successfully! ==="
 echo "• GUI App:       launch 'WireAudio Studio Setup' from KDE menu or run 'wireaudio'"
-echo "• Daemon Status: systemctl --user status wireaudio.service"
+echo "• Check:         just status / just doctor"
 echo "• ALSA Config:   ~/.asoundrc (default + wireaudio + wireaudio_in1 + wireaudio_in2 + wireaudio_direct)"
 echo "• Rollback:      run 'just uninstall' or './uninstall.sh' anytime to restore PipeWire"

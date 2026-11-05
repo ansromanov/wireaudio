@@ -18,9 +18,15 @@ uninstall:
 build:
     cargo build --workspace --release
 
-# Inspect all connected ALSA soundcards and current buffer/latency status
+# Show daemon state plus all ALSA soundcards and current buffer/latency status
 status:
-    cargo run -p wireaudio-engine --release -- status
+    @systemctl --user --no-pager --lines=0 status wireaudio.service || true
+    @echo
+    @if [ -x ~/.local/bin/wireaudio-engine ]; then ~/.local/bin/wireaudio-engine status; else cargo run -q -p wireaudio-engine --release -- status; fi
+
+# Check the installed setup (service, PipeWire, ALSA default, card, RT limits)
+doctor:
+    @bash ./scripts/doctor.sh
 
 # Register `wireaudio` and `wireaudio_direct` PCM devices in ~/.asoundrc (default: 32 frames @ 48000 Hz)
 register period="32" rate="48000" card="Gen":
