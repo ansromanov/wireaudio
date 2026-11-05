@@ -1,0 +1,12 @@
+[package]
+name = "awc-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Core types, lock-free shared-memory multi-client audio bus, and DSP primitives for AudioWireCraft"
+
+[dependencies]
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true

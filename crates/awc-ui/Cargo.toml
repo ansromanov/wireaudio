@@ -1,0 +1,20 @@
+[package]
+name = "awc-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "macOS Audio MIDI Setup style control center and low-latency audio router for Linux ALSA"
+
+[[bin]]
+name = "audiowirecraft"
+path = "src/main.rs"
+
+[dependencies]
+awc-core = { path = "../awc-core" }
+awc-alsa = { path = "../awc-alsa" }
+awc-engine = { path = "../awc-engine" }
+eframe.workspace = true
+egui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
