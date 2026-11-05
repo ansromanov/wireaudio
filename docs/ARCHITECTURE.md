@@ -10,7 +10,7 @@ On macOS (`CoreAudio`) and Windows (multi-client ASIO drivers such as Focusrite 
 
 On Linux, by contrast, standard desktop audio stacks often default USB interfaces to large safety buffers (e.g., `period_size = 256`, `buffer_size = 768` = `16 ms` buffer latency) or force users into fragile JACK patchbays where exclusive `hw:` capture breaks desktop/voice audio.
 
-**AudioWireCraft** solves this directly on top of `alsa-lib` (`libasound`) in Rust.
+**WireAudio** solves this directly on top of `alsa-lib` (`libasound`) in Rust.
 
 ---
 
@@ -26,20 +26,20 @@ flowchart TB
     end
 
     subgraph AlsaLayer["ALSA Client Integration Layer (~/.asoundrc & PCM Plugin)"]
-        HintPCM["Managed ~/.asoundrc Profiles\n• pcm.audiowirecraft (Shared 32f Bus)\n• pcm.audiowirecraft_direct (Direct HW)\n• hint.show = on (Visible in DAW Dropdowns)"]
-        ExtPlugin["crates/awc-pcm-plugin\nlibasound_module_pcm_audiowirecraft.so\n(_snd_pcm_audiowirecraft_open)"]
-        ShmBus["crates/awc-core\nLock-Free Shared Memory Ring Buffer\n(/dev/shm/audiowirecraft_bus_v1)"]
+        HintPCM["Managed ~/.asoundrc Profiles\n• pcm.wireaudio (Shared 32f Bus)\n• pcm.wireaudio_direct (Direct HW)\n• hint.show = on (Visible in DAW Dropdowns)"]
+        ExtPlugin["crates/wireaudio-pcm-plugin\nlibasound_module_pcm_wireaudio.so\n(_snd_pcm_wireaudio_open)"]
+        ShmBus["crates/wireaudio-core\nLock-Free Shared Memory Ring Buffer\n(/dev/shm/wireaudio_bus_v1)"]
     end
 
-    subgraph Engine["AudioWireCraft Real-Time Engine (crates/awc-alsa)"]
+    subgraph Engine["WireAudio Real-Time Engine (crates/wireaudio-alsa)"]
         RtLoop["Real-Time Audio Worker\n(SCHED_FIFO priority 80, zero allocations)"]
         Mixer["4x2 Studio Monitor & Routing Matrix\n• In 1-2 (Mic/Hi-Z) + In 3-4 (Loopback)\n• Out 1-2 (Monitor L/R)\n• Lossless S32_LE <-> f32 DSP"]
         HwCtl["ALSA Hardware Control (snd_ctl)\n• Scarlett 4th Gen Hardware Mixer\n• Sample Rate & Period Negotiation"]
         QuantumBridge["Non-Destructive Session Tuning\n• Dynamic 32-frame Quantum\n• Preserves Voice/Headset Devices"]
     end
 
-    subgraph UI["Desktop Control Center (crates/awc-ui)"]
-        SetupUI["AudioWireCraft Studio Setup (egui / eframe)\n• Device Sidebar (USB & PCI Soundcards)\n• Clock & Buffer Selector (16 / 32 / 64 / 96 frames @ 44.1-192 kHz)\n• Real-Time Input/Output Peak Meters & XRUN Telemetry\n• One-Click ALSA Registration & Rollback"]
+    subgraph UI["Desktop Control Center (crates/wireaudio-ui)"]
+        SetupUI["WireAudio Studio Setup (egui / eframe)\n• Device Sidebar (USB & PCI Soundcards)\n• Clock & Buffer Selector (16 / 32 / 64 / 96 frames @ 44.1-192 kHz)\n• Real-Time Input/Output Peak Meters & XRUN Telemetry\n• One-Click ALSA Registration & Rollback"]
     end
 
     subgraph Kernel["Linux Kernel (snd-usb-audio / snd-hda-intel)"]
@@ -86,36 +86,36 @@ Because the USB endpoint operates at a `125 us` packet interval (`8000` packets/
 
 ## 4. Multi-Client Shared Bus vs. Exclusive Direct Mode
 
-AudioWireCraft supports three selectable routing modes in the UI without requiring package removal:
+WireAudio supports three selectable routing modes in the UI without requiring package removal:
 
 ```mermaid
 sequenceDiagram
     participant DAW as REAPER / SoundCraft / TONE3000
     participant Sys as Browser / Desktop Audio
-    participant AWC as AudioWireCraft Shared Bus (~/.asoundrc + Shm)
+    participant WA as WireAudio Shared Bus (~/.asoundrc + Shm)
     participant HW as Focusrite Scarlett 2i2 4th Gen (hw:Gen,0)
 
     Note over DAW,HW: Mode 1: CoreAudio-Style Shared Low-Latency Bus (Default)
-    DAW->>AWC: Write 32-frame f32/S32_LE audio block
-    Sys->>AWC: Write concurrent desktop audio stream
-    AWC->>HW: Mix & commit 32-frame S32_LE period (0.67 ms)
-    HW-->>AWC: Capture 4 channels (Inputs 1-2 + Loopback 3-4)
-    AWC-->>DAW: Deliver low-latency capture frames
+    DAW->>WA: Write 32-frame f32/S32_LE audio block
+    Sys->>WA: Write concurrent desktop audio stream
+    WA->>HW: Mix & commit 32-frame S32_LE period (0.67 ms)
+    HW-->>WA: Capture 4 channels (Inputs 1-2 + Loopback 3-4)
+    WA-->>DAW: Deliver low-latency capture frames
 ```
 
 1. **`SharedLowLatencyBus` (Default — CoreAudio Style)**:
-   - Configures shared `dmix`/`dsnoop` and POSIX shared-memory (`ShmAudioBusHeader` in `/dev/shm/audiowirecraft_bus_v1`) locked to `period_size = 32` frames and `S32_LE`.
+   - Configures shared `dmix`/`dsnoop` and POSIX shared-memory (`ShmAudioBusHeader` in `/dev/shm/wireaudio_bus_v1`) locked to `period_size = 32` frames and `S32_LE`.
    - Allows **REAPER**, **SoundCraft**, **TONE3000**, and system/browser audio to share the Scarlett 2i2 4th Gen simultaneously.
 2. **`SystemSharedTuned`**:
    - Keeps the active desktop session intact (preserving USB microphones and wireless headsets used for voice calls) while dynamically forcing the runtime audio quantum to `32` frames (`pw-metadata clock.force-quantum 32`).
 3. **`ExclusiveDirectHw`**:
-   - Maps `pcm.audiowirecraft_direct` straight to `hw:Gen,0` for zero-intermediary DMA access when dedicated single-app recording is desired.
+   - Maps `pcm.wireaudio_direct` straight to `hw:Gen,0` for zero-intermediary DMA access when dedicated single-app recording is desired.
 
 ---
 
 ## 5. Real-Time Safety Guarantees
 
-To prevent audio dropouts (`XRUN`s) at 32 frames, the real-time audio path in `awc-core` and `awc-alsa` adheres to strict real-time invariants:
+To prevent audio dropouts (`XRUN`s) at 32 frames, the real-time audio path in `wireaudio-core` and `wireaudio-alsa` adheres to strict real-time invariants:
 
 - **Zero Heap Allocations in the Audio Callback**: All sample buffers (`play_buf`, `cap_buf`, and `ShmAudioBusHeader`) are pre-allocated before entering the audio loop.
 - **Wait-Free Atomic Telemetry**: Peak meters (`input_peaks_bits`, `output_peaks_bits`) and XRUN counters use `AtomicU32` / `AtomicU64` with `Ordering::Relaxed` so the 60 FPS `egui` UI never blocks the audio thread.

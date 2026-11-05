@@ -1,36 +1,36 @@
-//! AudioWireCraft Desktop UI — macOS "Audio MIDI Setup" style studio control center
+//! WireAudio Desktop UI — macOS "Audio MIDI Setup" style studio control center
 //! for Linux ALSA.
 
-use awc_alsa::{
+use eframe::egui;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
+use wireaudio_alsa::{
     apply_runtime_quantum_tuning, asoundrc_path, discover_alsa_devices, is_asoundrc_registered,
     list_card_mixer_controls, register_engine_in_asoundrc, unregister_engine_from_asoundrc,
     AlsaRealtimeEngine,
 };
-use awc_core::{
+use wireaudio_core::{
     AudioDeviceDescriptor, EngineConfig, RoutingMode, SUPPORTED_BUFFER_SIZES,
     SUPPORTED_SAMPLE_RATES,
 };
-use eframe::egui;
-use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("AudioWireCraft — Studio Audio Setup (ALSA)")
+            .with_title("WireAudio — Studio Audio Setup (ALSA)")
             .with_inner_size([1080.0, 680.0])
             .with_min_inner_size([860.0, 520.0]),
         ..Default::default()
     };
 
     eframe::run_native(
-        "AudioWireCraft",
+        "WireAudio",
         options,
-        Box::new(|cc| Ok(Box::new(AudioWireCraftApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(WireAudioApp::new(cc)))),
     )
 }
 
-struct AudioWireCraftApp {
+struct WireAudioApp {
     devices: Vec<AudioDeviceDescriptor>,
     selected_idx: usize,
     config: EngineConfig,
@@ -41,7 +41,7 @@ struct AudioWireCraftApp {
     last_refresh: Instant,
 }
 
-impl AudioWireCraftApp {
+impl WireAudioApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let devices = discover_alsa_devices();
         let selected_idx = devices
@@ -91,7 +91,7 @@ impl AudioWireCraftApp {
     }
 }
 
-impl eframe::App for AudioWireCraftApp {
+impl eframe::App for WireAudioApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if self.last_refresh.elapsed() >= Duration::from_secs(2) {
             self.refresh_devices();
@@ -101,7 +101,7 @@ impl eframe::App for AudioWireCraftApp {
         egui::Panel::top("top_header").show(ui, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.heading("AudioWireCraft — Audio Devices (macOS Audio MIDI Setup Style)");
+                ui.heading("WireAudio — Audio Devices (macOS Audio MIDI Setup Style)");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Refresh Hardware").clicked() {
                         self.refresh_devices();
@@ -205,6 +205,45 @@ impl eframe::App for AudioWireCraftApp {
                                 RoutingMode::ExclusiveDirectHw,
                             ] {
                                 ui.selectable_value(&mut self.config.routing_mode, mode, mode.label());
+                            }
+                        });
+                    ui.end_row();
+
+                    ui.label(egui::RichText::new("Output Device (Aggregate / Split I/O):").strong());
+                    let current_out_label = self
+                        .config
+                        .output_card_id
+                        .as_ref()
+                        .and_then(|id| self.devices.iter().find(|d| &d.id == id))
+                        .map(|d| format!("{} (hw:{})", d.name, d.id))
+                        .unwrap_or_else(|| format!("Same as Input ({} / hw:{})", dev.name, dev.id));
+
+                    egui::ComboBox::from_id_salt("output_device_combo")
+                        .selected_text(current_out_label)
+                        .show_ui(ui, |ui| {
+                            if ui
+                                .selectable_label(
+                                    self.config.output_card_id.is_none(),
+                                    format!("Same as Input ({} / hw:{})", dev.name, dev.id),
+                                )
+                                .clicked()
+                            {
+                                self.config.output_card_id = None;
+                            }
+                            for out_dev in &self.devices {
+                                if out_dev.playback_channels > 0 {
+                                    let is_sel = self.config.output_card_id.as_deref()
+                                        == Some(out_dev.id.as_str());
+                                    if ui
+                                        .selectable_label(
+                                            is_sel,
+                                            format!("{} (hw:{})", out_dev.name, out_dev.id),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.config.output_card_id = Some(out_dev.id.clone());
+                                    }
+                                }
                             }
                         });
                     ui.end_row();

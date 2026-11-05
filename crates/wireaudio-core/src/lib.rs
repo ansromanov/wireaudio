@@ -1,5 +1,5 @@
 //! Core types, lock-free shared-memory multi-client audio bus, and DSP primitives
-//! for AudioWireCraft.
+//! for WireAudio.
 //!
 //! Designed so a single studio soundcard (e.g. Focusrite Scarlett 2i2 4th Gen)
 //! can operate at 32-frame low latency while being simultaneously shared between
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Shared memory path in `/dev/shm` for zero-copy multi-client audio routing.
-pub const SHM_BUS_NAME: &str = "/audiowirecraft_bus_v1";
+pub const SHM_BUS_NAME: &str = "/wireaudio_bus_v1";
 
 /// Maximum number of simultaneous client streams on the shared bus.
 pub const MAX_CLIENTS: usize = 8;
@@ -26,7 +26,7 @@ pub const SUPPORTED_BUFFER_SIZES: &[u32] = &[16, 32, 48, 64, 96, 128, 256, 512];
 /// Supported studio sample rates (Hz).
 pub const SUPPORTED_SAMPLE_RATES: &[u32] = &[44100, 48000, 88200, 96000, 176400, 192000];
 
-/// Operating mode of an audio interface in AudioWireCraft.
+/// Operating mode of an audio interface in WireAudio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RoutingMode {
     /// CoreAudio-style Shared Low-Latency Bus:
@@ -132,6 +132,9 @@ impl AudioDeviceDescriptor {
 pub struct EngineConfig {
     pub selected_card_index: i32,
     pub selected_card_id: String,
+    /// Optional separate output soundcard ID for Aggregate / Split I/O routing
+    /// (e.g., Capture on Focusrite Scarlett `Gen` + Playback on internal `Generic`).
+    pub output_card_id: Option<String>,
     pub sample_rate: u32,
     pub period_size: u32,
     pub periods: u32,
@@ -146,12 +149,13 @@ impl Default for EngineConfig {
         Self {
             selected_card_index: 0,
             selected_card_id: "Gen".to_string(),
+            output_card_id: None,
             sample_rate: 48_000,
             period_size: 32,
             periods: 3,
             routing_mode: RoutingMode::SharedLowLatencyBus,
             expose_alsa_plugin: true,
-            alsa_pcm_name: "audiowirecraft".to_string(),
+            alsa_pcm_name: "wireaudio".to_string(),
             direct_monitor_enabled: false,
         }
     }
@@ -181,7 +185,7 @@ pub struct ShmClientSlot {
     pub playback_ring: [AtomicU32; MAX_RING_FRAMES * 2],
 }
 
-/// Lock-free shared memory header mapped at `/dev/shm/audiowirecraft_bus_v1`.
+/// Lock-free shared memory header mapped at `/dev/shm/wireaudio_bus_v1`.
 #[repr(C)]
 pub struct ShmAudioBusHeader {
     pub magic: u32,
@@ -200,7 +204,7 @@ pub struct ShmAudioBusHeader {
     pub clients: [ShmClientSlot; MAX_CLIENTS],
 }
 
-pub const SHM_MAGIC: u32 = 0x4157_4331; // "AWC1"
+pub const SHM_MAGIC: u32 = 0x5741_5531; // "WAU1"
 
 /// Fast lossless conversion from 32-bit signed PCM (`S32_LE`, used by Focusrite Scarlett 4th Gen)
 /// to normalized `f32` in `[-1.0, 1.0]`.

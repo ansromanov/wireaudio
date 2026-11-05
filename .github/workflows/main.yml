@@ -1,0 +1,84 @@
+name: Main
+
+on:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  sanity:
+    name: clippy + related tests (Linux)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect code changes
+        id: changes
+        run: |
+          changed=$(git diff --name-only HEAD~1 HEAD || true)
+          if echo "$changed" | grep -qE '^(crates/|tests/|benches/|Cargo\.(toml|lock))'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install lld and ALSA/GUI dependencies
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            lld \
+            libasound2-dev \
+            pkg-config \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libgl1-mesa-dev
+
+      - name: Install Rust toolchain
+        if: steps.changes.outputs.code == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        if: steps.changes.outputs.code == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install nextest
+        if: steps.changes.outputs.code == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Format
+        if: steps.changes.outputs.code == 'true'
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        if: steps.changes.outputs.code == 'true'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run workspace tests
+        if: steps.changes.outputs.code == 'true'
+        run: cargo nextest run --profile ci --workspace
+
+      - name: Job summary
+        if: steps.changes.outputs.code == 'true' && always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: target/nextest/ci/junit.xml
+          detailed_summary: true
+          include_passed: true
+          check_name: Test Results

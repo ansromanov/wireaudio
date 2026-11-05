@@ -1,5 +1,5 @@
 [package]
-name = "awc-ui"
+name = "wireaudio-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,13 +7,13 @@ authors.workspace = true
 description = "macOS Audio MIDI Setup style control center and low-latency audio router for Linux ALSA"
 
 [[bin]]
-name = "audiowirecraft"
+name = "wireaudio"
 path = "src/main.rs"
 
 [dependencies]
-awc-core = { path = "../awc-core" }
-awc-alsa = { path = "../awc-alsa" }
-awc-engine = { path = "../awc-engine" }
+wireaudio-core = { path = "../wireaudio-core" }
+wireaudio-alsa = { path = "../wireaudio-alsa" }
+wireaudio-engine = { path = "../wireaudio-engine" }
 eframe.workspace = true
 egui.workspace = true
 serde.workspace = true

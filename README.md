@@ -10,7 +10,7 @@
 
 - **32-Frame Ultra-Low Latency**: Configures USB and PCI studio interfaces (such as the **Focusrite Scarlett 2i2 4th Gen**) with `S32_LE` (24/32-bit), `125 us` USB high-speed framing, and `SCHED_FIFO` real-time threads.
 - **CoreAudio-Style Shared Bus**: No more choosing between your DAW and your browser/voice chat. Multiple clients (DAWs, standalone guitar DSPs, and desktop audio) share the interface simultaneously without exclusive lockouts.
-- **Zero-Disruption ALSA Registration**: Registers `audiowirecraft` and `audiowirecraft_direct` PCM devices in `~/.asoundrc` (with `snd_device_name_hint` descriptions) and builds `libasound_module_pcm_audiowirecraft.so` so REAPER and `cpal`-based apps like SoundCraft detect the engine out of the box without uninstalling system packages.
+- **Zero-Disruption ALSA Registration**: Registers `wireaudio` and `wireaudio_direct` PCM devices in `~/.asoundrc` (with `snd_device_name_hint` descriptions) and builds `libasound_module_pcm_wireaudio.so` so REAPER and `cpal`-based apps like SoundCraft detect the engine out of the box without uninstalling system packages.
 - **macOS Audio MIDI Setup UI**: Built with `egui`/`eframe` for instant inspection of all connected interfaces, input/output channel strips, hardware mixer controls (`snd_ctl`), sample rate (`44.1–192 kHz`), and buffer size (`16–512 frames`).
 
 ---
@@ -19,10 +19,10 @@
 
 | Crate | Description |
 | :--- | :--- |
-| [`crates/awc-core`](crates/awc-core) | Core types, lock-free shared-memory multi-client audio bus (`/dev/shm/audiowirecraft_bus_v1`), `S32_LE` ↔ `f32` sample conversion, and latency math. |
-| [`crates/awc-alsa`](crates/awc-alsa) | Direct ALSA hardware discovery (`/proc/asound` + `libasound`), `SCHED_FIFO` real-time audio loop, hardware mixer control inspector (`snd_ctl`), and non-destructive `~/.asoundrc` management. |
-| [`crates/awc-pcm-plugin`](crates/awc-pcm-plugin) | Native ALSA External PCM plugin (`libasound_module_pcm_audiowirecraft.so`) for zero-copy client connectivity. |
-| [`crates/awc-ui`](crates/awc-ui) | Native desktop GUI modeled after macOS **Audio MIDI Setup**. |
+| [`crates/wireaudio-core`](crates/wireaudio-core) | Core types, lock-free shared-memory multi-client audio bus (`/dev/shm/wireaudio_bus_v1`), `S32_LE` ↔ `f32` sample conversion, and latency math. |
+| [`crates/wireaudio-alsa`](crates/wireaudio-alsa) | Direct ALSA hardware discovery (`/proc/asound` + `libasound`), `SCHED_FIFO` real-time audio loop, hardware mixer control inspector (`snd_ctl`), and non-destructive `~/.asoundrc` management. |
+| [`crates/wireaudio-pcm-plugin`](crates/wireaudio-pcm-plugin) | Native ALSA External PCM plugin (`libasound_module_pcm_wireaudio.so`) for zero-copy client connectivity. |
+| [`crates/wireaudio-ui`](crates/wireaudio-ui) | Native desktop GUI modeled after macOS **Audio MIDI Setup**. |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the complete system design, dataflow diagrams, and real-time scheduling specification.
 
@@ -37,8 +37,8 @@ cargo build --workspace --release
 # Run tests
 cargo test --workspace
 
-# Launch the AudioWireCraft Studio Setup UI
-cargo run --release -p awc-ui
+# Launch the WireAudio Studio Setup UI
+cargo run --release -p wireaudio-ui
 ```
 
 ## License

@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/awc-core",
-    "crates/awc-alsa",
-    "crates/awc-engine",
-    "crates/awc-pcm-plugin",
-    "crates/awc-ui",
+    "crates/wireaudio-core",
+    "crates/wireaudio-alsa",
+    "crates/wireaudio-engine",
+    "crates/wireaudio-pcm-plugin",
+    "crates/wireaudio-ui",
 ]
 
 [workspace.package]

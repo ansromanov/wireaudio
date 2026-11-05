@@ -1,5 +1,5 @@
 [package]
-name = "awc-pcm-plugin"
+name = "wireaudio-pcm-plugin"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,10 +7,10 @@ authors.workspace = true
 description = "Native ALSA External PCM (ioplug) plugin for zero-copy multi-client routing in Reaper, SoundCraft, and TONE3000"
 
 [lib]
-name = "asound_module_pcm_audiowirecraft"
+name = "asound_module_pcm_wireaudio"
 crate-type = ["cdylib"]
 
 [dependencies]
-awc-core = { path = "../awc-core" }
+wireaudio-core = { path = "../wireaudio-core" }
 alsa-sys.workspace = true
 libc.workspace = true

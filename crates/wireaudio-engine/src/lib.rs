@@ -1,12 +1,12 @@
 //! Real-time studio routing matrix and multi-client session coordinator
-//! for AudioWireCraft.
+//! for WireAudio.
 
-pub use awc_alsa::{
+pub use wireaudio_alsa::{
     apply_runtime_quantum_tuning, asoundrc_path, discover_alsa_devices, is_asoundrc_registered,
     list_card_mixer_controls, register_engine_in_asoundrc, unregister_engine_from_asoundrc,
     AlsaRealtimeEngine, LiveEngineTelemetry,
 };
-pub use awc_core::{
+pub use wireaudio_core::{
     AudioDeviceDescriptor, ChannelStrip, EngineConfig, HardwareStreamStatus, RoutingMode,
 };
 
