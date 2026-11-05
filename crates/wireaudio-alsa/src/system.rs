@@ -8,11 +8,10 @@ use wireaudio_core::EngineConfig;
 
 /// Returns the path to `~/.config/wireaudio/config.json`.
 pub fn config_file_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/andrei".to_string());
-    PathBuf::from(home)
-        .join(".config")
-        .join("wireaudio")
-        .join("config.json")
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    home.join(".config").join("wireaudio").join("config.json")
 }
 
 /// Loads the persistent `EngineConfig` from `~/.config/wireaudio/config.json`,
@@ -49,8 +48,8 @@ pub fn release_card_from_pipewire(card_name: &str) {
 }
 
 /// Restores the soundcard back to PipeWire (`pro-audio` profile) when unregistering WireAudio.
-pub fn restore_card_to_pipewire() {
-    if let Some(dev_id) = find_wpctl_device_id("Scarlett") {
+pub fn restore_card_to_pipewire(card_name: &str) {
+    if let Some(dev_id) = find_wpctl_device_id(card_name) {
         let _ = std::process::Command::new("wpctl")
             .args(["set-profile", &dev_id.to_string(), "pro-audio"])
             .output();

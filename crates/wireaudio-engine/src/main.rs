@@ -152,7 +152,8 @@ fn cmd_daemon() {
             .find(|d| d.id == cfg.selected_card_id)
             .or_else(|| devices.first())
         {
-            if !last_card_present || !is_asoundrc_registered() {
+            // Register only on card (re)appearance so a manual `unregister` sticks.
+            if !last_card_present {
                 match register_engine_in_asoundrc(&cfg, card) {
                     Ok(msg) => println!("[WireAudio Daemon] {}", msg),
                     Err(err) => eprintln!("[WireAudio Daemon] Error: {}", err),

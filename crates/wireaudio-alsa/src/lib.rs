@@ -267,8 +267,10 @@ pub fn list_card_mixer_controls(card_index: i32) -> Vec<String> {
 
 /// Returns the path to `~/.asoundrc`.
 pub fn asoundrc_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/andrei".to_string());
-    PathBuf::from(home).join(".asoundrc")
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    home.join(".asoundrc")
 }
 
 /// Checks whether WireAudio is currently registered in `~/.asoundrc`.
@@ -287,7 +289,9 @@ pub fn register_engine_in_asoundrc(
     card_desc: &AudioDeviceDescriptor,
 ) -> Result<String, String> {
     release_card_from_pipewire(&card_desc.name);
-    let _ = save_config(cfg);
+    if let Err(err) = save_config(cfg) {
+        eprintln!("Warning: settings not persisted: {}", err);
+    }
     let path = asoundrc_path();
     let existing = fs::read_to_string(&path).unwrap_or_default();
 
@@ -305,7 +309,7 @@ pub fn register_engine_in_asoundrc(
 pcm.wireaudio_dmix {{
     type dmix
     ipc_key 5678293
-    ipc_perm 0666
+    ipc_perm 0660
     slave {{
         pcm "hw:{out_card_id},0"
         rate {rate}
@@ -319,7 +323,7 @@ pcm.wireaudio_dmix {{
 pcm.wireaudio_dsnoop {{
     type dsnoop
     ipc_key 5678294
-    ipc_perm 0666
+    ipc_perm 0660
     slave {{
         pcm "hw:{card_id},0"
         rate {rate}
@@ -461,7 +465,13 @@ ctl.{pcm_name} {{
 
 /// Safely removes only the WireAudio block from `~/.asoundrc`.
 pub fn unregister_engine_from_asoundrc() -> Result<String, String> {
-    restore_card_to_pipewire();
+    let cfg = load_saved_config();
+    if let Some(card) = discover_alsa_devices()
+        .into_iter()
+        .find(|d| d.id == cfg.selected_card_id)
+    {
+        restore_card_to_pipewire(&card.name);
+    }
     let path = asoundrc_path();
     let Ok(existing) = fs::read_to_string(&path) else {
         return Ok("~/.asoundrc is already clean.".to_string());
@@ -759,8 +769,8 @@ fn configure_pcm_hw(
     let _ = hwp.set_channels(channels);
     let rate = hwp.set_rate_near(cfg.sample_rate, ValueOr::Nearest)?;
     let period = hwp.set_period_size_near(cfg.period_size as i64, ValueOr::Nearest)?;
-    let periods = cfg.periods.max(3) as i64;
-    let target_buf = (period * periods).max(period * 3);
+    // Enforced minimum: fewer than 3 periods underruns on USB at small period sizes.
+    let target_buf = period * cfg.periods.max(3) as i64;
     let buf = hwp.set_buffer_size_near(target_buf)?;
     pcm.hw_params(&hwp)?;
 

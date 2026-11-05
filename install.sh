@@ -19,7 +19,6 @@ echo "2. Installing binaries to ${BIN_DIR}..."
 mkdir -p "${BIN_DIR}"
 install -Dm755 "${REPO_DIR}/target/release/wireaudio" "${BIN_DIR}/wireaudio"
 install -Dm755 "${REPO_DIR}/target/release/wireaudio-engine" "${BIN_DIR}/wireaudio-engine"
-install -Dm755 "${REPO_DIR}/target/release/libasound_module_pcm_wireaudio.so" "${BIN_DIR}/libasound_module_pcm_wireaudio.so"
 
 echo "3. Installing desktop launcher to ${APPS_DIR}..."
 mkdir -p "${APPS_DIR}"
@@ -41,9 +40,9 @@ wireplumber.profiles = {
 }
 EOF
 
-AUDIO_UNITS="pipewire-pulse.socket pipewire-pulse.service wireplumber.service pipewire.socket pipewire.service"
-systemctl --user stop ${AUDIO_UNITS} 2>/dev/null || true
-systemctl --user mask ${AUDIO_UNITS} 2>/dev/null || true
+AUDIO_UNITS=(pipewire-pulse.socket pipewire-pulse.service wireplumber.service pipewire.socket pipewire.service)
+systemctl --user stop "${AUDIO_UNITS[@]}" 2>/dev/null || true
+systemctl --user mask "${AUDIO_UNITS[@]}" 2>/dev/null || true
 
 echo "5. Registering WireAudio ALSA profile (period=${PERIOD}, rate=${RATE}, card=${CARD})..."
 "${BIN_DIR}/wireaudio-engine" register --period "${PERIOD}" --rate "${RATE}" --card "${CARD}"
