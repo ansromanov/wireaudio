@@ -151,7 +151,7 @@ impl Default for EngineConfig {
             selected_card_id: "Gen".to_string(),
             output_card_id: None,
             sample_rate: 48_000,
-            period_size: 32,
+            period_size: 128,
             periods: 3,
             routing_mode: RoutingMode::SharedLowLatencyBus,
             expose_alsa_plugin: true,

@@ -6,6 +6,14 @@ license.workspace = true
 authors.workspace = true
 description = "Real-time audio routing matrix, monitor mixer, and session coordinator for WireAudio"
 
+[lib]
+name = "wireaudio_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wireaudio-engine"
+path = "src/main.rs"
+
 [dependencies]
 wireaudio-core = { path = "../wireaudio-core" }
 wireaudio-alsa = { path = "../wireaudio-alsa" }

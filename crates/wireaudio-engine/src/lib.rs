@@ -2,9 +2,10 @@
 //! for WireAudio.
 
 pub use wireaudio_alsa::{
-    apply_runtime_quantum_tuning, asoundrc_path, discover_alsa_devices, is_asoundrc_registered,
-    list_card_mixer_controls, register_engine_in_asoundrc, unregister_engine_from_asoundrc,
-    AlsaRealtimeEngine, LiveEngineTelemetry,
+    apply_runtime_quantum_tuning, asoundrc_path, config_file_path, discover_alsa_devices,
+    is_asoundrc_registered, list_card_mixer_controls, load_saved_config,
+    register_engine_in_asoundrc, reset_runtime_quantum_tuning, save_config,
+    unregister_engine_from_asoundrc, AlsaRealtimeEngine, LiveEngineTelemetry,
 };
 pub use wireaudio_core::{
     AudioDeviceDescriptor, ChannelStrip, EngineConfig, HardwareStreamStatus, RoutingMode,

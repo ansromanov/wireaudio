@@ -1,0 +1,15 @@
+[Unit]
+Description=WireAudio Low-Latency ALSA Studio Engine Daemon
+Documentation=https://github.com/ansromanov/wireaudio
+After=sound.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/wireaudio-engine daemon
+Restart=on-failure
+RestartSec=2
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=default.target
