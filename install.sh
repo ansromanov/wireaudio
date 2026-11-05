@@ -28,7 +28,7 @@ if command -v kbuildsycoca6 >/dev/null 2>&1; then
     kbuildsycoca6 >/dev/null 2>&1 || true
 fi
 
-echo "4. Disabling PipeWire / PulseAudio audio daemons (preserving pure ALSA)..."
+echo "4. Disabling PipeWire audio (pipewire-pulse masked, ALSA cards released; video kept)..."
 mkdir -p "${WP_CONF_DIR}"
 cat > "${WP_CONF_DIR}/99-wireaudio-alsa-only.conf" << 'EOF'
 # Managed by WireAudio Installer: prevent WirePlumber/PipeWire from opening ALSA soundcards
@@ -40,9 +40,16 @@ wireplumber.profiles = {
 }
 EOF
 
-AUDIO_UNITS=(pipewire-pulse.socket pipewire-pulse.service wireplumber.service pipewire.socket pipewire.service)
-systemctl --user stop "${AUDIO_UNITS[@]}" 2>/dev/null || true
-systemctl --user mask "${AUDIO_UNITS[@]}" 2>/dev/null || true
+PULSE_UNITS=(pipewire-pulse.socket pipewire-pulse.service)
+systemctl --user stop "${PULSE_UNITS[@]}" 2>/dev/null || true
+systemctl --user mask "${PULSE_UNITS[@]}" 2>/dev/null || true
+
+# Keep PipeWire + WirePlumber for video (screen sharing); the conf above keeps them off ALSA cards.
+VIDEO_UNITS=(pipewire.socket pipewire.service wireplumber.service)
+systemctl --user unmask "${VIDEO_UNITS[@]}" 2>/dev/null || true
+systemctl --user daemon-reload
+systemctl --user enable pipewire.socket wireplumber.service 2>/dev/null || true
+systemctl --user restart "${VIDEO_UNITS[@]}" 2>/dev/null || true
 
 echo "5. Registering WireAudio ALSA profile (period=${PERIOD}, rate=${RATE}, card=${CARD})..."
 "${BIN_DIR}/wireaudio-engine" register --period "${PERIOD}" --rate "${RATE}" --card "${CARD}"
