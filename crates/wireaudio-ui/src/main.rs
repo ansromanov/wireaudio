@@ -6,8 +6,8 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use wireaudio_alsa::{
     apply_runtime_quantum_tuning, asoundrc_path, discover_alsa_devices, is_asoundrc_registered,
-    list_card_mixer_controls, register_engine_in_asoundrc, unregister_engine_from_asoundrc,
-    AlsaRealtimeEngine,
+    list_card_mixer_controls, load_saved_config, register_engine_in_asoundrc,
+    unregister_engine_from_asoundrc, AlsaRealtimeEngine,
 };
 use wireaudio_core::{
     AudioDeviceDescriptor, EngineConfig, RoutingMode, SUPPORTED_BUFFER_SIZES,
@@ -44,12 +44,17 @@ struct WireAudioApp {
 impl WireAudioApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let devices = discover_alsa_devices();
+        let mut config = load_saved_config();
         let selected_idx = devices
             .iter()
-            .position(|d| d.name.to_lowercase().contains("scarlett"))
+            .position(|d| d.id == config.selected_card_id)
+            .or_else(|| {
+                devices
+                    .iter()
+                    .position(|d| d.name.to_lowercase().contains("scarlett"))
+            })
             .unwrap_or(0);
 
-        let mut config = EngineConfig::default();
         if let Some(dev) = devices.get(selected_idx) {
             config.selected_card_index = dev.card_index;
             config.selected_card_id = dev.id.clone();

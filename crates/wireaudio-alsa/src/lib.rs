@@ -265,12 +265,92 @@ pub fn asoundrc_path() -> PathBuf {
     PathBuf::from(home).join(".asoundrc")
 }
 
+/// Returns the path to `~/.config/wireaudio/config.json`.
+pub fn config_file_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/andrei".to_string());
+    PathBuf::from(home)
+        .join(".config")
+        .join("wireaudio")
+        .join("config.json")
+}
+
+/// Loads the persistent `EngineConfig` from `~/.config/wireaudio/config.json`,
+/// falling back to `EngineConfig::default()`.
+pub fn load_saved_config() -> EngineConfig {
+    let path = config_file_path();
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<EngineConfig>(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Saves the `EngineConfig` to `~/.config/wireaudio/config.json`.
+pub fn save_config(cfg: &EngineConfig) -> Result<(), String> {
+    let path = config_file_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create config dir {}: {}", parent.display(), e))?;
+    }
+    let json = serde_json::to_string_pretty(cfg)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    fs::write(&path, json).map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+}
+
 /// Checks whether WireAudio is currently registered in `~/.asoundrc`.
 pub fn is_asoundrc_registered() -> bool {
     let path = asoundrc_path();
     fs::read_to_string(path)
         .map(|s| s.contains(ASOUNDRC_MARKER_BEGIN))
         .unwrap_or(false)
+}
+
+/// Automatically releases the target ALSA soundcard from PipeWire/WirePlumber (`wpctl set-profile <id> off`)
+/// so that ALSA `dmix`/`dsnoop` (`pcm.wireaudio`) and `pcm.wireaudio_direct` never hit `EBUSY`.
+pub fn release_card_from_pipewire(card_name: &str) {
+    if let Some(dev_id) = find_wpctl_device_id(card_name) {
+        let _ = std::process::Command::new("wpctl")
+            .args(["set-profile", &dev_id.to_string(), "off"])
+            .output();
+        thread::sleep(Duration::from_millis(120));
+    }
+}
+
+/// Restores the soundcard back to PipeWire (`pro-audio` profile) when unregistering WireAudio.
+pub fn restore_card_to_pipewire() {
+    if let Some(dev_id) = find_wpctl_device_id("Scarlett") {
+        let _ = std::process::Command::new("wpctl")
+            .args(["set-profile", &dev_id.to_string(), "pro-audio"])
+            .output();
+    }
+}
+
+fn find_wpctl_device_id(card_name: &str) -> Option<u32> {
+    let out = std::process::Command::new("wpctl")
+        .arg("status")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let needle = card_name.to_lowercase();
+    let mut in_devices = false;
+    for line in text.lines() {
+        if line.contains("├─ Devices:") {
+            in_devices = true;
+            continue;
+        }
+        if in_devices && (line.contains("├─ Sinks:") || line.contains("└─")) {
+            break;
+        }
+        if in_devices && line.to_lowercase().contains(&needle) {
+            for token in line.split_whitespace() {
+                if let Some(num_str) = token.strip_suffix('.') {
+                    if let Ok(id) = num_str.parse::<u32>() {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Generates and writes the non-destructive `~/.asoundrc` block so that Reaper, SoundCraft,
@@ -280,6 +360,8 @@ pub fn register_engine_in_asoundrc(
     cfg: &EngineConfig,
     card_desc: &AudioDeviceDescriptor,
 ) -> Result<String, String> {
+    release_card_from_pipewire(&card_desc.name);
+    let _ = save_config(cfg);
     let path = asoundrc_path();
     let existing = fs::read_to_string(&path).unwrap_or_default();
 
@@ -297,7 +379,7 @@ pub fn register_engine_in_asoundrc(
 pcm.wireaudio_dmix {{
     type dmix
     ipc_key 5678293
-    ipc_perm 0660
+    ipc_perm 0666
     slave {{
         pcm "hw:{out_card_id},0"
         rate {rate}
@@ -311,7 +393,7 @@ pcm.wireaudio_dmix {{
 pcm.wireaudio_dsnoop {{
     type dsnoop
     ipc_key 5678294
-    ipc_perm 0660
+    ipc_perm 0666
     slave {{
         pcm "hw:{card_id},0"
         rate {rate}
@@ -322,13 +404,43 @@ pcm.wireaudio_dsnoop {{
     }}
 }}
 
-pcm.wireaudio_duplex {{
-    type asym
-    playback.pcm "wireaudio_dmix"
-    capture.pcm "wireaudio_dsnoop"
+# Capture plug with explicit Mono + Stereo routing from 4-channel Scarlett USB stream
+pcm.wireaudio_capture_routed {{
+    type plug
+    slave.pcm "wireaudio_dsnoop"
+    ttable.0.0 1.0
+    ttable.0.1 1.0
+    ttable.1.1 1.0
 }}
 
-# 1. Shared Low-Latency Bus (Reaper + SoundCraft + TONE3000 + System simultaneously)
+pcm.wireaudio_playback_routed {{
+    type plug
+    slave.pcm "wireaudio_dmix"
+}}
+
+pcm.wireaudio_duplex {{
+    type asym
+    playback.pcm "wireaudio_playback_routed"
+    capture.pcm "wireaudio_capture_routed"
+}}
+
+# Override ALSA default so all desktop apps, browsers, and DAWs route through WireAudio
+# even when PipeWire daemons are disabled.
+pcm.!default {{
+    type plug
+    slave.pcm "wireaudio_duplex"
+    hint {{
+        show on
+        description "WireAudio Default Studio Bus ({card_name} - {period}f / {lat:.2}ms @ {rate}Hz)"
+    }}
+}}
+
+ctl.!default {{
+    type hw
+    card "{out_card_id}"
+}}
+
+# 1. Shared Low-Latency Bus (Supports both Mono & Stereo in TONE3000, Reaper, SoundCraft)
 pcm.{pcm_name} {{
     type plug
     slave.pcm "wireaudio_duplex"
@@ -338,7 +450,39 @@ pcm.{pcm_name} {{
     }}
 }}
 
-# 2. Direct Zero-Copy Hardware Access (32-frame MMAP for dedicated DAW recording)
+# 2. Dedicated Guitar/Mic Input 1 (Centered Mono->Stereo + Mono compatible)
+pcm.{pcm_name}_in1 {{
+    type asym
+    playback.pcm "wireaudio_playback_routed"
+    capture.pcm {{
+        type plug
+        slave.pcm "wireaudio_dsnoop"
+        ttable.0.0 1.0
+        ttable.1.0 1.0
+    }}
+    hint {{
+        show on
+        description "WireAudio Input 1 Mono/Guitar ({card_name} - {period}f / {lat:.2}ms)"
+    }}
+}}
+
+# 3. Dedicated Guitar/Mic Input 2 (Centered Mono->Stereo + Mono compatible)
+pcm.{pcm_name}_in2 {{
+    type asym
+    playback.pcm "wireaudio_playback_routed"
+    capture.pcm {{
+        type plug
+        slave.pcm "wireaudio_dsnoop"
+        ttable.0.1 1.0
+        ttable.1.1 1.0
+    }}
+    hint {{
+        show on
+        description "WireAudio Input 2 Mono/Guitar ({card_name} - {period}f / {lat:.2}ms)"
+    }}
+}}
+
+# 4. Direct Zero-Copy Hardware Access (Exclusive DMA)
 pcm.{pcm_name}_direct {{
     type plug
     slave {{
@@ -391,6 +535,7 @@ ctl.{pcm_name} {{
 
 /// Safely removes only the WireAudio block from `~/.asoundrc`.
 pub fn unregister_engine_from_asoundrc() -> Result<String, String> {
+    restore_card_to_pipewire();
     let path = asoundrc_path();
     let Ok(existing) = fs::read_to_string(&path) else {
         return Ok("~/.asoundrc is already clean.".to_string());
@@ -425,10 +570,11 @@ fn strip_managed_block(input: &str) -> String {
 }
 
 /// Applies PipeWire runtime quantum tuning (`pw-metadata`) when in `SystemSharedTuned`
-/// or `SharedLowLatencyBus` mode so the card runs at `32/48000` even while shared with
-/// desktop/voice apps!
+/// mode. Uses a safe minimum quantum (>= 64 frames when sharing with a 256-frame ALSA node)
+/// to prevent USB 6-sample headroom starvation and crackling.
 pub fn apply_runtime_quantum_tuning(period_size: u32, sample_rate: u32) -> Result<String, String> {
-    let quantum_str = format!("{}", period_size);
+    let safe_shared_quantum = period_size.max(64);
+    let quantum_str = format!("{}", safe_shared_quantum);
     let rate_str = format!("{}", sample_rate);
 
     let status1 = std::process::Command::new("pw-metadata")
@@ -441,14 +587,25 @@ pub fn apply_runtime_quantum_tuning(period_size: u32, sample_rate: u32) -> Resul
 
     match status1 {
         Ok(out) if out.status.success() => Ok(format!(
-            "Applied system quantum {} frames @ {} Hz without interrupting voice streams",
-            period_size, sample_rate
+            "Applied glitch-free shared quantum {} frames @ {} Hz",
+            safe_shared_quantum, sample_rate
         )),
         _ => Ok(format!(
             "Applied {} frames @ {} Hz configuration to ALSA profile",
             period_size, sample_rate
         )),
     }
+}
+
+/// Resets any forced runtime quantum on the host session to eliminate crackling.
+pub fn reset_runtime_quantum_tuning() -> Result<String, String> {
+    let _ = std::process::Command::new("pw-metadata")
+        .args(["-n", "settings", "0", "clock.force-quantum", "0"])
+        .output();
+    let _ = std::process::Command::new("pw-metadata")
+        .args(["-n", "settings", "0", "clock.force-rate", "0"])
+        .output();
+    Ok("Reset system clock quantum to automatic (crackle-free default).".to_string())
 }
 
 /// Real-time ALSA engine controller for testing and monitoring 32-frame low-latency I/O.
@@ -571,6 +728,16 @@ fn run_alsa_loop(
     let mut phase = 0.0f32;
     let phase_inc = 2.0 * std::f32::consts::PI * 440.0 / (achieved_rate.max(1) as f32);
 
+    // Pre-fill 2 periods of silence into playback ring buffer before starting duplex capture
+    // so `appl_ptr - hw_ptr` maintains headroom and never starves USB DMA (fixes crackling).
+    if let Ok(io_play) = play_pcm.io_i32() {
+        let _ = io_play.writei(&play_buf);
+        let _ = io_play.writei(&play_buf);
+    }
+    if let Some(ref cap) = cap_pcm {
+        let _ = cap.start();
+    }
+
     while !stop_flag.load(Ordering::Relaxed) {
         let mut in_peak_l = 0.0f32;
         let mut in_peak_r = 0.0f32;
@@ -666,8 +833,16 @@ fn configure_pcm_hw(
     let _ = hwp.set_channels(channels);
     let rate = hwp.set_rate_near(cfg.sample_rate, ValueOr::Nearest)?;
     let period = hwp.set_period_size_near(cfg.period_size as i64, ValueOr::Nearest)?;
-    let target_buf = (cfg.period_size * cfg.periods) as i64;
+    let periods = cfg.periods.max(3) as i64;
+    let target_buf = (period * periods).max(period * 3);
     let buf = hwp.set_buffer_size_near(target_buf)?;
     pcm.hw_params(&hwp)?;
+
+    if let Ok(swp) = pcm.sw_params_current() {
+        let _ = swp.set_avail_min(period);
+        let _ = swp.set_start_threshold(period * 2);
+        let _ = pcm.sw_params(&swp);
+    }
+
     Ok((rate, period as u32, buf as u32))
 }

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=WireAudio Studio Setup
+GenericName=ALSA Studio Audio Control Center
+Comment=Low-latency ALSA audio routing, buffer size, and channel setup for DAWs
+Exec=wireaudio
+Icon=audio-card
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;Settings;
+Keywords=ALSA;Audio;Scarlett;Reaper;SoundCraft;TONE3000;Low-Latency;
+StartupNotify=true

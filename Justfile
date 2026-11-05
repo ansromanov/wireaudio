@@ -2,9 +2,17 @@
 
 set dotenv-load := false
 
-# List available recipes
+#List available recipes
 default:
     @just --list
+
+# Install WireAudio app, systemd user daemon, desktop launcher, and disable PipeWire audio daemons
+install period="128" rate="48000" card="Gen":
+    bash ./install.sh {{period}} {{rate}} {{card}}
+
+# Uninstall WireAudio and restore PipeWire / WirePlumber audio daemons
+uninstall:
+    bash ./uninstall.sh
 
 # Build the entire workspace in release mode
 build:

@@ -5,8 +5,10 @@ use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 use wireaudio_engine::{
-    apply_runtime_quantum_tuning, asoundrc_path, discover_alsa_devices, is_asoundrc_registered,
-    register_engine_in_asoundrc, unregister_engine_from_asoundrc, AlsaRealtimeEngine, EngineConfig,
+    apply_runtime_quantum_tuning, asoundrc_path, config_file_path, discover_alsa_devices,
+    is_asoundrc_registered, load_saved_config, register_engine_in_asoundrc,
+    reset_runtime_quantum_tuning, unregister_engine_from_asoundrc, AlsaRealtimeEngine,
+    EngineConfig,
 };
 
 fn main() {
@@ -17,16 +19,22 @@ fn main() {
         "status" => cmd_status(),
         "register" => cmd_register(&args[1..]),
         "unregister" => cmd_unregister(),
+        "reset-quantum" => {
+            if let Ok(msg) = reset_runtime_quantum_tuning() {
+                println!("{}", msg);
+            }
+        }
+        "daemon" => cmd_daemon(),
         "run" => cmd_run(&args[1..]),
         _ => {
-            eprintln!("Usage: wireaudio-engine <status|register|unregister|run> [--period 32] [--rate 48000] [--card Gen] [--out-card Generic]");
+            eprintln!("Usage: wireaudio-engine <status|register|unregister|daemon|reset-quantum|run> [--period 128] [--rate 48000] [--card Gen] [--out-card Generic]");
             std::process::exit(1);
         }
     }
 }
 
 fn parse_config_flags(args: &[String]) -> EngineConfig {
-    let mut cfg = EngineConfig::default();
+    let mut cfg = load_saved_config();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -119,12 +127,42 @@ fn cmd_register(args: &[String]) {
 }
 
 fn cmd_unregister() {
+    let _ = reset_runtime_quantum_tuning();
     match unregister_engine_from_asoundrc() {
         Ok(msg) => println!("{}", msg),
         Err(err) => {
             eprintln!("Error: {}", err);
             std::process::exit(1);
         }
+    }
+}
+
+fn cmd_daemon() {
+    println!(
+        "Starting WireAudio ALSA Daemon (config: {})...",
+        config_file_path().display()
+    );
+
+    let mut last_card_present = false;
+    loop {
+        let cfg = load_saved_config();
+        let devices = discover_alsa_devices();
+        if let Some(card) = devices
+            .iter()
+            .find(|d| d.id == cfg.selected_card_id)
+            .or_else(|| devices.first())
+        {
+            if !last_card_present || !is_asoundrc_registered() {
+                match register_engine_in_asoundrc(&cfg, card) {
+                    Ok(msg) => println!("[WireAudio Daemon] {}", msg),
+                    Err(err) => eprintln!("[WireAudio Daemon] Error: {}", err),
+                }
+                last_card_present = true;
+            }
+        } else {
+            last_card_present = false;
+        }
+        thread::sleep(Duration::from_secs(3));
     }
 }
 
