@@ -14,10 +14,18 @@ use wireaudio_core::{
     SUPPORTED_SAMPLE_RATES,
 };
 
+const OK_COLOR: egui::Color32 = egui::Color32::from_rgb(100, 220, 160);
+const WARN_COLOR: egui::Color32 = egui::Color32::from_rgb(230, 180, 80);
+
+fn section(ui: &mut egui::Ui, title: &str) {
+    ui.label(egui::RichText::new(title.to_uppercase()).small().weak());
+    ui.separator();
+}
+
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("WireAudio — Studio Audio Setup (ALSA)")
+            .with_title("WireAudio")
             .with_inner_size([1080.0, 680.0])
             .with_min_inner_size([860.0, 520.0]),
         ..Default::default()
@@ -42,7 +50,12 @@ struct WireAudioApp {
 }
 
 impl WireAudioApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        cc.egui_ctx.set_theme(egui::Theme::Dark);
+        cc.egui_ctx.global_style_mut(|s| {
+            s.spacing.item_spacing = egui::vec2(8.0, 6.0);
+            s.spacing.button_padding = egui::vec2(10.0, 4.0);
+        });
         let devices = discover_alsa_devices();
         let mut config = load_saved_config();
         let selected_idx = devices
@@ -74,9 +87,7 @@ impl WireAudioApp {
             engine: AlsaRealtimeEngine::new(),
             mixer_controls,
             asoundrc_registered,
-            status_banner:
-                "Ready. Select an audio device to configure 32-frame low-latency shared routing."
-                    .to_string(),
+            status_banner: "Ready.".to_string(),
             last_refresh: Instant::now(),
         }
     }
@@ -106,17 +117,15 @@ impl eframe::App for WireAudioApp {
         egui::Panel::top("top_header").show(ui, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.heading("WireAudio — Audio Devices (macOS Audio MIDI Setup Style)");
+                ui.heading(egui::RichText::new("WireAudio").strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Refresh Hardware").clicked() {
+                    if ui.button("⟳ Refresh").clicked() {
                         self.refresh_devices();
                     }
                     let badge = if self.asoundrc_registered {
-                        egui::RichText::new("ALSA Plugin: Registered")
-                            .color(egui::Color32::from_rgb(80, 210, 120))
+                        egui::RichText::new("● ALSA registered").color(OK_COLOR)
                     } else {
-                        egui::RichText::new("ALSA Plugin: Not Registered")
-                            .color(egui::Color32::from_rgb(230, 180, 80))
+                        egui::RichText::new("○ ALSA not registered").color(WARN_COLOR)
                     };
                     ui.label(badge);
                 });
@@ -135,35 +144,50 @@ impl eframe::App for WireAudioApp {
             .default_size(280.0)
             .show(ui, |ui| {
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new("Audio Devices").strong());
-                ui.separator();
+                ui.label(egui::RichText::new("DEVICES").small().weak());
+                ui.add_space(2.0);
 
                 let mut new_selection = self.selected_idx;
                 for (idx, dev) in self.devices.iter().enumerate() {
                     let selected = idx == self.selected_idx;
-                    let icon = if dev.is_usb { "USB" } else { "PCI" };
-                    let title = format!(
-                        "[{}] {} ({} in / {} out)",
-                        icon, dev.name, dev.capture_channels, dev.playback_channels
+                    let bus = if dev.is_usb { "USB" } else { "PCI" };
+                    let state = if dev.playback_status.is_running {
+                        format!(
+                            "{} Hz · {}f",
+                            dev.playback_status.rate, dev.playback_status.period_size
+                        )
+                    } else {
+                        "idle".to_string()
+                    };
+                    let mut job = egui::text::LayoutJob::default();
+                    let style = ui.style();
+                    egui::RichText::new(format!("{}\n", dev.name))
+                        .strong()
+                        .append_to(
+                            &mut job,
+                            style,
+                            egui::FontSelection::Default,
+                            egui::Align::LEFT,
+                        );
+                    egui::RichText::new(format!(
+                        "{} · {} in / {} out · {}",
+                        bus, dev.capture_channels, dev.playback_channels, state
+                    ))
+                    .small()
+                    .weak()
+                    .append_to(
+                        &mut job,
+                        style,
+                        egui::FontSelection::Default,
+                        egui::Align::LEFT,
                     );
-                    if ui.selectable_label(selected, title).clicked() {
+                    let resp = ui.add_sized(
+                        [ui.available_width(), 0.0],
+                        egui::Button::selectable(selected, job),
+                    );
+                    if resp.clicked() {
                         new_selection = idx;
                     }
-                    ui.indent(format!("dev_sub_{}", idx), |ui| {
-                        let state_txt = if dev.playback_status.is_running {
-                            format!(
-                                "hw:{} • {} Hz • {}f / {}f",
-                                dev.id,
-                                dev.playback_status.rate,
-                                dev.playback_status.period_size,
-                                dev.playback_status.buffer_size
-                            )
-                        } else {
-                            format!("hw:{} • Idle", dev.id)
-                        };
-                        ui.small(state_txt);
-                    });
-                    ui.add_space(4.0);
                 }
 
                 if new_selection != self.selected_idx {
@@ -182,25 +206,28 @@ impl eframe::App for WireAudioApp {
                 return;
             };
 
+            ui.add_space(4.0);
             ui.heading(&dev.long_name);
-            ui.label(format!(
-                "ALSA Hardware ID: hw:{},0 (card {}) • USB Interval: {} • Current Active Buffer: {} frames ({:.2} ms)",
-                dev.id,
-                dev.card_index,
-                dev.playback_status
-                    .usb_packet_interval_us
-                    .map(|u| format!("{} us", u))
-                    .unwrap_or_else(|| "N/A".to_string()),
-                dev.playback_status.period_size,
-                dev.current_period_latency_ms()
-            ));
-            ui.separator();
+            let mut info = format!("hw:{},0 · card {}", dev.id, dev.card_index);
+            if let Some(us) = dev.playback_status.usb_packet_interval_us {
+                info += &format!(" · USB {} µs", us);
+            }
+            if dev.playback_status.is_running {
+                info += &format!(
+                    " · active {}f ({:.2} ms)",
+                    dev.playback_status.period_size,
+                    dev.current_period_latency_ms()
+                );
+            }
+            ui.label(egui::RichText::new(info).weak());
+            ui.add_space(8.0);
 
+            section(ui, "Configuration");
             egui::Grid::new("clock_buffer_grid")
                 .num_columns(2)
                 .spacing([24.0, 10.0])
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Routing Architecture:").strong());
+                    ui.label("Routing");
                     egui::ComboBox::from_id_salt("routing_mode_combo")
                         .selected_text(self.config.routing_mode.label())
                         .show_ui(ui, |ui| {
@@ -209,12 +236,16 @@ impl eframe::App for WireAudioApp {
                                 RoutingMode::SystemSharedTuned,
                                 RoutingMode::ExclusiveDirectHw,
                             ] {
-                                ui.selectable_value(&mut self.config.routing_mode, mode, mode.label());
+                                ui.selectable_value(
+                                    &mut self.config.routing_mode,
+                                    mode,
+                                    mode.label(),
+                                );
                             }
                         });
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Output Device (Aggregate / Split I/O):").strong());
+                    ui.label("Output");
                     let current_out_label = self
                         .config
                         .output_card_id
@@ -253,7 +284,7 @@ impl eframe::App for WireAudioApp {
                         });
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Sample Rate (Clock):").strong());
+                    ui.label("Sample rate");
                     ui.horizontal(|ui| {
                         for &rate in SUPPORTED_SAMPLE_RATES {
                             let supported = dev.supported_rates.contains(&rate);
@@ -261,7 +292,7 @@ impl eframe::App for WireAudioApp {
                                 if ui
                                     .selectable_label(
                                         self.config.sample_rate == rate,
-                                        format!("{} Hz", rate),
+                                        format!("{}k", rate as f32 / 1000.0),
                                     )
                                     .clicked()
                                 {
@@ -272,12 +303,14 @@ impl eframe::App for WireAudioApp {
                     });
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Buffer Size (Period):").strong());
+                    ui.label("Buffer");
                     ui.horizontal(|ui| {
                         for &frames in SUPPORTED_BUFFER_SIZES {
-                            let label = format!("{} f", frames);
                             if ui
-                                .selectable_label(self.config.period_size == frames, label)
+                                .selectable_label(
+                                    self.config.period_size == frames,
+                                    frames.to_string(),
+                                )
                                 .clicked()
                             {
                                 self.config.period_size = frames;
@@ -286,16 +319,15 @@ impl eframe::App for WireAudioApp {
                     });
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Target Studio Latency:").strong());
+                    ui.label("Latency");
                     ui.label(
                         egui::RichText::new(format!(
-                            "{:.2} ms one-way ({} frames) • {:.2} ms round-trip ({} periods)",
+                            "{:.2} ms one-way · {:.2} ms round-trip ({} periods)",
                             self.config.target_period_latency_ms(),
-                            self.config.period_size,
                             self.config.target_roundtrip_latency_ms(),
                             self.config.periods
                         ))
-                        .color(egui::Color32::from_rgb(100, 220, 160))
+                        .color(OK_COLOR)
                         .strong(),
                     );
                     ui.end_row();
@@ -304,7 +336,8 @@ impl eframe::App for WireAudioApp {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 if ui
-                    .button("Apply & Register ALSA Device (Reaper / SoundCraft / TONE3000)")
+                    .add(egui::Button::new(egui::RichText::new("Apply").strong()))
+                    .on_hover_text("Write ~/.asoundrc profile for Reaper / SoundCraft / TONE3000")
                     .clicked()
                 {
                     let _ = apply_runtime_quantum_tuning(
@@ -321,7 +354,7 @@ impl eframe::App for WireAudioApp {
                     self.refresh_devices();
                 }
 
-                if self.asoundrc_registered && ui.button("Unregister from ~/.asoundrc").clicked() {
+                if self.asoundrc_registered && ui.button("Unregister").clicked() {
                     match unregister_engine_from_asoundrc() {
                         Ok(msg) => {
                             self.status_banner = msg;
@@ -330,13 +363,13 @@ impl eframe::App for WireAudioApp {
                         Err(err) => self.status_banner = err,
                     }
                 }
+            });
 
+            ui.add_space(12.0);
+            section(ui, "Monitor");
+            ui.horizontal(|ui| {
                 let rt_running = self.engine.is_running();
-                let btn_label = if rt_running {
-                    "Stop RT Monitor Loop"
-                } else {
-                    "Start RT Monitor Loop"
-                };
+                let btn_label = if rt_running { "■ Stop" } else { "▶ Start" };
                 if ui.button(btn_label).clicked() {
                     if rt_running {
                         self.engine.stop();
@@ -354,7 +387,7 @@ impl eframe::App for WireAudioApp {
                     .telemetry
                     .test_tone_enabled
                     .load(Ordering::Relaxed);
-                if ui.checkbox(&mut tone, "440 Hz Test Tone").changed() {
+                if ui.checkbox(&mut tone, "Test tone 440 Hz").changed() {
                     self.engine
                         .telemetry
                         .test_tone_enabled
@@ -366,21 +399,23 @@ impl eframe::App for WireAudioApp {
                     .telemetry
                     .direct_monitor_enabled
                     .load(Ordering::Relaxed);
-                if ui.checkbox(&mut mon, "Zero-Latency Input Monitor").changed() {
+                if ui.checkbox(&mut mon, "Input monitor").changed() {
                     self.engine
                         .telemetry
                         .direct_monitor_enabled
                         .store(mon, Ordering::Relaxed);
                 }
+
+                if rt_running {
+                    let xruns = self.engine.telemetry.xrun_count.load(Ordering::Relaxed);
+                    let color = if xruns == 0 { OK_COLOR } else { WARN_COLOR };
+                    ui.label(egui::RichText::new(format!("XRUNs: {}", xruns)).color(color));
+                }
             });
 
-            ui.separator();
-
+            ui.add_space(8.0);
             ui.columns(2, |cols| {
-                cols[0].label(
-                    egui::RichText::new(format!("Inputs ({} Channels)", dev.inputs.len()))
-                        .strong(),
-                );
+                cols[0].label(egui::RichText::new("Inputs").weak());
                 for ch in &dev.inputs {
                     let peak_bits = self
                         .engine
@@ -400,10 +435,7 @@ impl eframe::App for WireAudioApp {
                     });
                 }
 
-                cols[1].label(
-                    egui::RichText::new(format!("Outputs ({} Channels)", dev.outputs.len()))
-                        .strong(),
-                );
+                cols[1].label(egui::RichText::new("Outputs").weak());
                 for ch in &dev.outputs {
                     let peak_bits = self
                         .engine
@@ -424,15 +456,14 @@ impl eframe::App for WireAudioApp {
                 }
             });
 
-            ui.separator();
+            ui.add_space(12.0);
             ui.collapsing(
-                format!(
-                    "Hardware Mixer Controls (`snd_ctl` hw:{}, {} controls) & ~/.asoundrc Path",
-                    dev.card_index,
-                    self.mixer_controls.len()
-                ),
+                format!("Hardware controls ({})", self.mixer_controls.len()),
                 |ui| {
-                    ui.label(format!("Managed ALSA Config: {}", asoundrc_path().display()));
+                    ui.label(
+                        egui::RichText::new(format!("Config: {}", asoundrc_path().display()))
+                            .weak(),
+                    );
                     ui.horizontal_wrapped(|ui| {
                         for ctl in &self.mixer_controls {
                             ui.code(ctl);
