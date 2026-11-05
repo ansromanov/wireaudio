@@ -1,0 +1,15 @@
+[package]
+name = "awc-alsa"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Direct low-latency ALSA mmap backend, Scarlett/USB hardware discovery, and .asoundrc registration"
+
+[dependencies]
+awc-core = { path = "../awc-core" }
+alsa.workspace = true
+alsa-sys.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true

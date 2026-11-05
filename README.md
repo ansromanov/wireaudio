@@ -1,8 +1,8 @@
-# AudioWireCraft
+# WireAudio
 
 **CoreAudio-style low-latency ALSA studio engine, multi-client shared audio bus, and desktop control center for Linux.**
 
-`AudioWireCraft` brings the plug-and-play simplicity of **macOS Audio MIDI Setup** and **Focusrite Control** to Linux ALSA — allowing professional DAWs (**REAPER**, **[SoundCraft](https://github.com/storytold/soundcraft)**, **TONE3000** / neural amp modelers) to run at **32-frame buffer sizes (`0.67 ms` @ 48 kHz)** while seamlessly sharing the audio interface with desktop and browser audio.
+`WireAudio` (`wireaudio`) brings the plug-and-play simplicity of **macOS Audio MIDI Setup** and **Focusrite Control** to Linux ALSA — allowing professional DAWs (**REAPER**, **[SoundCraft](https://github.com/storytold/soundcraft)**, **TONE3000** / neural amp modelers) to run at **32-frame buffer sizes (`0.67 ms` @ 48 kHz)** while seamlessly sharing the audio interface with desktop and browser audio.
 
 ---
 
